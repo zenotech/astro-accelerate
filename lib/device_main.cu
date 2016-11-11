@@ -4,6 +4,7 @@
 #include "device_binning_kernel.cu"
 
 #include "device_SPS_inplace_kernel.cu" //Added by KA
+#include "device_BLN_kernel.cu" //Added by KA
 #include "device_MSD_grid_kernel.cu" //Added by KA
 #include "device_MSD_plane_kernel.cu" //Added by KA
 #include "device_MSD_limited_kernel.cu" //Added by KA
@@ -11,6 +12,7 @@
 #include "device_threshold_kernel.cu" //Added by KA
 #include "device_single_FIR_kernel.cu" //Added by KA
 #include "device_SPS_inplace.cu" //Added by KA
+#include "device_BLN.cu" //Added by KA
 #include "device_MSD_grid.cu" //Added by KA
 #include "device_MSD_plane.cu" //Added by KA
 #include "device_MSD_limited.cu" //Added by KA

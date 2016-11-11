@@ -5,6 +5,7 @@
 #include "AstroAccelerate/device_dedispersion_kernel.h"
 #include "AstroAccelerate/device_zero_dm.h"
 
+#include "AstroAccelerate/device_BLN.h" //Added by KA
 #include "AstroAccelerate/device_SPS_inplace_kernel.h" //Added by KA
 #include "AstroAccelerate/device_SPS_inplace.h" //Added by KA
 #include "AstroAccelerate/device_MSD_grid.h" //Added by KA
@@ -53,7 +54,6 @@ void main_function
 	int enable_acceleration,
 	int enable_periodicity,
 	int output_dmt,
-	int enable_zero_dm,
 	int *inBin,
 	int *outBin,
 	int *ndms,

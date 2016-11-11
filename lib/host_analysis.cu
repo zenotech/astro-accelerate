@@ -17,7 +17,7 @@ void analysis_CPU(int i, float tstart, int t_processed, int nsamp, int nchans, i
 	float	start_time;
 
 	unsigned long int j;
-	unsigned long int vals;
+	unsigned long int vals=(unsigned long int)(t_processed*ndms[i]);
 	
 	float mean, stddev, stddev_orig;
 
@@ -32,7 +32,7 @@ void analysis_CPU(int i, float tstart, int t_processed, int nsamp, int nchans, i
 	//printf("\n\n%f\t%f\t%f\t%d", dm_low[i], dm_high[i], dm_step[i], ndms[i]), fflush(stdout);
 
 	// Calculate the total number of values
-	vals = (unsigned long int)(t_processed*ndms[i]);
+	
 
 	//chunk=(int)(vals/24);
 

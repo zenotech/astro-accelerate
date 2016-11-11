@@ -12,21 +12,21 @@ __device__ __constant__ float c_sqrt_taps[PD_MAXTAPS + 1];
 __global__ void PD_ZC_GPU_KERNEL(float *d_input, float *d_output, int maxTaps, int nTimesamples, int nLoops)
 {
 	int x_r, y_r, x_w, y_w;
-	int Elements_per_block = PD_NTHREADS * PD_NWINDOWS;
+	int Elements_per_block = PD_NTHREADS*PD_NWINDOWS;
 
 	//read
-	y_r = ( blockIdx.y * blockDim.y + threadIdx.y ) * nTimesamples;
-	x_r = ( blockIdx.x + 1 ) * Elements_per_block + threadIdx.x;
+	y_r = ( blockIdx.y*blockDim.y + threadIdx.y )*nTimesamples;
+	x_r = ( blockIdx.x + 1 )*Elements_per_block + threadIdx.x;
 
 	//write
-	y_w = ( blockIdx.y * blockDim.y + threadIdx.y ) * ( maxTaps - 1 ) * gridDim.x;
-	x_w = blockIdx.x * ( maxTaps - 1 ) + threadIdx.x;
+	y_w = ( blockIdx.y*blockDim.y + threadIdx.y )*( maxTaps - 1 )*gridDim.x;
+	x_w = blockIdx.x*( maxTaps - 1 ) + threadIdx.x;
 
 	for (int f = 0; f < nLoops; f++)
 	{
 		if (x_r < nTimesamples && threadIdx.x < ( maxTaps - 1 ))
 		{
-			d_output[x_w + y_w + f * WARP] = d_input[x_r + y_r + f * WARP];
+			d_output[x_w + y_w + f*WARP] = d_input[x_r + y_r + f*WARP];
 		}
 	}
 }
@@ -45,8 +45,8 @@ __global__ void PD_INPLACE_GPU_KERNEL(float *d_input, float *d_temp, unsigned ch
 
 	//----------------------------------------------
 	//----> Reading data
-	gpos_y = blockIdx.y * nTimesamples;
-	gpos_x = blockIdx.x * PD_NTHREADS * PD_NWINDOWS + threadIdx.x;
+	gpos_y = blockIdx.y*nTimesamples;
+	gpos_x = blockIdx.x*PD_NTHREADS*PD_NWINDOWS + threadIdx.x;
 	spos = threadIdx.x;
 	for (f = 0; f < PD_NWINDOWS; f++)
 	{
@@ -59,9 +59,9 @@ __global__ void PD_INPLACE_GPU_KERNEL(float *d_input, float *d_temp, unsigned ch
 	}
 
 	//----> Loading shared data
-	itemp = PD_NTHREADS * PD_NWINDOWS + maxTaps - 1;
-	gpos_y = blockIdx.y * ( maxTaps - 1 ) * gridDim.x;
-	gpos_x = blockIdx.x * ( maxTaps - 1 ) + threadIdx.x;
+	itemp = PD_NTHREADS*PD_NWINDOWS + maxTaps - 1;
+	gpos_y = blockIdx.y*( maxTaps - 1 )*gridDim.x;
+	gpos_x = blockIdx.x*( maxTaps - 1 ) + threadIdx.x;
 	while (spos < itemp)
 	{ // && gpos_x<((maxTaps-1)*gridDim.x)
 		s_input[spos] = d_temp[gpos_y + gpos_x];
@@ -72,7 +72,7 @@ __global__ void PD_INPLACE_GPU_KERNEL(float *d_input, float *d_temp, unsigned ch
 	__syncthreads();
 
 	//----> SNR for nTaps=1
-	spos = PD_NWINDOWS * threadIdx.x;
+	spos = PD_NWINDOWS*threadIdx.x;
 	for (i = 0; i < PD_NWINDOWS; i++)
 	{
 		res_SNR[i] = ( s_input[spos + i] - signal_mean ) / signal_sd;
@@ -85,14 +85,15 @@ __global__ void PD_INPLACE_GPU_KERNEL(float *d_input, float *d_temp, unsigned ch
 	for (f = 1; f < maxTaps; f++)
 	{
 		//nTaps=f+1;!
-		ftemp = signal_sd + f * modifier;
-		spos = PD_NWINDOWS * threadIdx.x;
+		ftemp = signal_sd*c_sqrt_taps[f+1] + f*modifier;
+		//ftemp = signal_sd + f*modifier;
+		spos = PD_NWINDOWS*threadIdx.x;
 
 		// 0th element from NWINDOW
 		i = 0;
 		FIR_value += s_input[spos + f];
 
-		SNR = ( FIR_value - ( f + 1 ) * signal_mean ) / ( ftemp );
+		SNR = ( FIR_value - ( f + 1 )*signal_mean ) / ( ftemp );
 		if (SNR > res_SNR[i])
 		{
 			res_SNR[i] = SNR;
@@ -104,7 +105,7 @@ __global__ void PD_INPLACE_GPU_KERNEL(float *d_input, float *d_temp, unsigned ch
 		{
 			temp_FIR_value = temp_FIR_value - s_input[spos + i - 1] + s_input[spos + f + i];
 
-			SNR = ( temp_FIR_value - ( f + 1 ) * signal_mean ) / ( ftemp );
+			SNR = ( temp_FIR_value - ( f + 1 )*signal_mean ) / ( ftemp );
 			if (SNR > res_SNR[i])
 			{
 				res_SNR[i] = SNR;
@@ -115,8 +116,8 @@ __global__ void PD_INPLACE_GPU_KERNEL(float *d_input, float *d_temp, unsigned ch
 
 	//----------------------------------------------
 	//---- Writing data
-	gpos_y = blockIdx.y * nTimesamples;
-	gpos_x = blockIdx.x * PD_NTHREADS * PD_NWINDOWS + PD_NWINDOWS * threadIdx.x;
+	gpos_y = blockIdx.y*nTimesamples;
+	gpos_x = blockIdx.x*PD_NTHREADS*PD_NWINDOWS + PD_NWINDOWS*threadIdx.x;
 	for (i = 0; i < PD_NWINDOWS; i++)
 	{
 		if (( gpos_x + i ) < ( nTimesamples ))
