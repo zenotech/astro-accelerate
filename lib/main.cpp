@@ -73,6 +73,7 @@ int main(int argc, char* argv[])
 	// Analysis variables
 	float power = 2.0f;
 	float sigma_cutoff = 6.0f;
+	float sigma_constant;
 	// Timing parameters
 	double start_time = omp_get_wtime();
 
@@ -80,7 +81,7 @@ int main(int argc, char* argv[])
 	get_user_input(&fp, argc, argv, &multi_file, &enable_debug, &enable_analysis,
 	    &enable_periodicity, &enable_acceleration, &output_dmt, &enable_zero_dm, &nboots,
 	    &ntrial_bins, &navdms, &narrow, &wide, &aggression, &nsearch, &inBin,
-	    &outBin, &power, &sigma_cutoff, &range, &user_dm_low, &user_dm_high,
+	    &outBin, &power, &sigma_cutoff, &sigma_constant, &range, &user_dm_low, &user_dm_high,
 	    &user_dm_step);
 	if (enable_debug == 1)
 		debug(1, start_time, range, outBin, enable_debug, enable_analysis,
@@ -139,7 +140,7 @@ int main(int argc, char* argv[])
 	  navdms, nsearch, aggression, narrow, wide, maxshift_original,
 	  tsamp_original, inc, tstart, tstart_local, tsamp, fch1, foff,
 	  // Analysis variables
-	  power, sigma_cutoff, start_time
+	  power, sigma_cutoff, sigma_constant, start_time
 	);
 
 	// write output here, not in the library

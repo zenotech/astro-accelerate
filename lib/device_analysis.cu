@@ -163,8 +163,7 @@ void export_file_nDM_nTimesamples(float *data, int nDMs, int nTimesamples, char 
 
 
 
-void analysis_GPU(int i, float tstart, int t_processed, int nsamp, int nchans, int maxshift, int max_ndms, int *ndms, int *outBin, float cutoff, float *output_buffer, float *dm_low, float *dm_high, float *dm_step, float tsamp){
-	float sigma_constant=4.0;
+void analysis_GPU(int i, float tstart, int t_processed, int nsamp, int nchans, int maxshift, int max_ndms, int *ndms, int *outBin, float cutoff, float sigma_constant, float *output_buffer, float *dm_low, float *dm_high, float *dm_step, float tsamp){
 	
 	FILE *fp_out;
 	char filename[200];

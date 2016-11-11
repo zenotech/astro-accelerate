@@ -71,6 +71,7 @@ void main_function
 	// Analysis variables
 	float power,
 	float sigma_cutoff,
+	float sigma_constant,
 	double start_time
 );
 
