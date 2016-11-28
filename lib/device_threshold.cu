@@ -17,7 +17,8 @@ int THRESHOLD(float *d_input, unsigned char *d_input_taps, float *d_output_list,
 
 	Elements_per_block = 2*WARP*THR_ELEM_PER_THREAD;
 	nBlocks = (nTimesamples-offset)/Elements_per_block;
-	nRest = nTimesamples - nBlocks*Elements_per_block;
+	nRest = (nTimesamples-offset) - nBlocks*Elements_per_block;
+	if(nRest>0) nBlocks++;
 
 	//---------> CUDA block and CUDA grid parameters
 	int nCUDAblocks_x = nBlocks;
@@ -28,7 +29,7 @@ int THRESHOLD(float *d_input, unsigned char *d_input_taps, float *d_output_list,
 
 	//---------> Pulse detection FIR
 	THR_init();
-	THR_GPU_WARP<<<gridSize, blockSize>>>((float2 *) d_input, d_input_taps, d_output_list, gmem_pos, threshold, nTimesamples, max_list_size);
+	THR_GPU_WARP<<<gridSize, blockSize>>>((float2 *) d_input, d_input_taps, d_output_list, gmem_pos, threshold, nTimesamples, nTimesamples-offset, max_list_size);
 
 	return ( 0 );
 }
