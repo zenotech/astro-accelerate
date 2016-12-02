@@ -205,7 +205,7 @@ void analysis_GPU(int i, float tstart, int t_processed, int nsamp, int nchans, i
 	printf("Bin: %d, Mean: %f, Stddev: %f\n", PD_MAXTAPS, signal_mean_16, signal_sd_16);
 
 	h_MSD[0] = signal_mean_1;
-	h_MSD[1] = ( signal_sd_16 - signal_sd_1*sqrt((float) PD_MAXTAPS) )/( (float) ( PD_MAXTAPS - 1 ) );
+	h_MSD[1] = 0; // ( signal_sd_16 - signal_sd_1*sqrt((float) PD_MAXTAPS) )/( (float) ( PD_MAXTAPS - 1 ) );
 	h_MSD[2] = signal_sd_1;
 	cudaMemcpy(d_MSD, h_MSD, 3*sizeof(float), cudaMemcpyHostToDevice);
 	timer.Stop();
