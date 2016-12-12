@@ -9,7 +9,7 @@ void BLN_init(){
 	cudaDeviceSetSharedMemConfig (cudaSharedMemBankSizeFourByte);
 }
 
-int BLN(float *d_input, float *d_MSD, int CellDim_x, int CellDim_y, int nDMs, int nTimesamples, int offset, float multiplier){
+int BLN(float *d_input, float *d_MSD, float *d_stats, int CellDim_x, int CellDim_y, int nDMs, int nTimesamples, int nIterations, int offset, float multiplier){
 	//---------> Task specific
 	int GridSize_x, GridSize_y, x_steps, y_steps, nThreads;
 	GridSize_x=(nTimesamples-offset)/CellDim_x;
@@ -35,12 +35,12 @@ int BLN(float *d_input, float *d_MSD, int CellDim_x, int CellDim_y, int nDMs, in
 	//---------> Allocation of temporary memory
 	float *d_output;
 	cudaMalloc((void **) &d_output, GridSize_x*GridSize_y*3*sizeof(float));
-
+	
 	//---------> MSD
 	BLN_init();
 	BLN_MSD_GPU_grid<<<gridSize,blockSize,nThreads*8>>>(d_input, d_output, x_steps, y_steps, nTimesamples, 0);
-	BLN_outlier_rejection<<<final_gridSize, final_blockSize>>>(d_output, d_MSD, GridSize_x*GridSize_y, (float) (CellDim_x*CellDim_y), multiplier);
-
+	BLN_outlier_rejection<<<final_gridSize, final_blockSize>>>(d_output, d_MSD, d_stats, GridSize_x*GridSize_y, (float) (CellDim_x*CellDim_y), nIterations, multiplier);	
+	
 	//---------> De-allocation of temporary memory
 	cudaFree(d_output);
 	

@@ -145,6 +145,20 @@ void analysis_GPU(int i, float tstart, int t_processed, int nsamp, int nchans, i
 	//float linear_BLN;
 	//float linear_noise_BLN;
 	int h_list_size;
+	
+	//-------------------------- STATS --------------------------
+	FILE *stats_out;
+	sprintf(filename, "stats-t_%.2f-dm_%.2f-%.2f.dat", start_time, dm_low[i], dm_high[i]);
+	if ((stats_out=fopen(filename, "w")) == NULL) {
+		fprintf(stderr, "Error opening output file!\n");
+		exit(0);
+	}
+	int nIterations=20;
+	float *d_stats;
+	cudaMalloc((void **) &d_stats, (nIterations+1)*4*sizeof(float));
+	float *h_stats;
+	h_stats=(float*) malloc((nIterations+1)*4*sizeof(float));
+	//-------------------------- STATS --------------------------
 
 	total_time = 0;
 	
@@ -184,12 +198,19 @@ void analysis_GPU(int i, float tstart, int t_processed, int nsamp, int nchans, i
 	
 	
 	//-------------- BLN MSD
-	timer.Start();
-	BLN(output_buffer, d_MSD, 32, 32, nDMs, nTimesamples, 128, sigma_constant);
+	timer.Start(); //                                              || number of iterations
+	BLN(output_buffer, d_MSD, d_stats, 32, 32, nDMs, nTimesamples, nIterations, 128, sigma_constant);
 	timer.Stop();
 	partial_time = timer.Elapsed();
 	total_time += partial_time;
 	printf("MSD limited took:%f ms\n", partial_time);
+	
+	//-------------------------- STATS --------------------------
+	cudaMemcpy(h_stats, d_stats, (nIterations+1)*4*sizeof(float), cudaMemcpyDeviceToHost);
+	for(int f=0; f<(nIterations+1); f++){
+		fprintf(stats_out, "%d, %f, %f, %f, %f\n", f, h_stats[4*f], h_stats[4*f+1], h_stats[4*f+2], h_stats[4*f+3]);
+	}
+	//-------------------------- STATS --------------------------
 
 	timer.Start();
 	cudaMemcpy(h_MSD, d_MSD, 3*sizeof(float), cudaMemcpyDeviceToHost);
@@ -198,7 +219,7 @@ void analysis_GPU(int i, float tstart, int t_processed, int nsamp, int nchans, i
 	printf("Bin: %d, Mean: %f, Stddev: %f\n", 1, signal_mean_1, signal_sd_1);
 
 	offset = PD_FIR(output_buffer, d_list, PD_MAXTAPS, nDMs, nTimesamples);
-	BLN(d_list, d_MSD, 32, 32, nDMs, nTimesamples, offset, sigma_constant);
+	BLN(d_list, d_MSD, d_stats, 32, 32, nDMs, nTimesamples, nIterations, offset, sigma_constant);
 	cudaMemcpy(h_MSD, d_MSD, 3*sizeof(float), cudaMemcpyDeviceToHost);
 	signal_mean_16 = h_MSD[0];
 	signal_sd_16 = h_MSD[1];
@@ -293,6 +314,12 @@ void analysis_GPU(int i, float tstart, int t_processed, int nsamp, int nchans, i
 
 	free(b_list_out);
 	free(h_output_list);
+	
+	//-------------------------- STATS --------------------------
+	cudaFree(d_stats);
+	free(h_stats);
+	fclose(stats_out);
+	//-------------------------- STATS --------------------------
 
 	fclose(fp_out);
 }

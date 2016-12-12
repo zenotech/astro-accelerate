@@ -96,7 +96,9 @@ __global__ void BLN_MSD_GPU_grid(float const* __restrict__ d_input, float *d_out
 	}
 }
 
-__global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *d_output, int size, float nElements, float multiplier) {
+
+
+__global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *d_output, float *d_stats, int size, float nElements, int nIterations, float multiplier) {
 	__shared__ float Ms[WARP*WARP];
 	__shared__ float Ss[WARP*WARP];
 	__shared__ float js[WARP*WARP];
@@ -109,15 +111,26 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 	float ftemp;
 	float signal_mean, signal_sd;
 	
+	__shared__ float s_ss_xx[WARP*WARP];
+	__shared__ float s_ss_x[WARP*WARP];
+	float ss_temp;
+	float ss_xx;
+	float ss_x;
+	
 	warp_id = threadIdx.x>>5;
 	
-	//----------------------------------------------
+	//-----------------------------------------------------------------
 	//---- Calculation of the initial MSD
 	pos=threadIdx.x;
 	if(size>blockDim.x){
 		M=__ldg(&d_input[3*pos]);
 		S=__ldg(&d_input[3*pos+1]);
 		j=nElements;
+		//-------------------------- STATS --------------------------
+		ss_temp = sqrt(__ldg(&d_input[3*pos+1])/((float) nElements));
+		ss_x    = ss_temp;
+		ss_xx   = (ss_temp*ss_temp);
+		//-------------------------- STATS --------------------------
 		pos = pos + blockDim.x;
 		while (pos<size){
 			jv=nElements;
@@ -126,6 +139,11 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 			M = M + __ldg(&d_input[3*pos]);
 			j=j+jv;
 			pos = pos + blockDim.x;
+			//-------------------------- STATS --------------------------
+			ss_temp = sqrt(__ldg(&d_input[3*pos+1])/((float) nElements));
+			ss_x  += ss_temp;
+			ss_xx += (ss_temp*ss_temp);
+			//-------------------------- STATS --------------------------
 		}
 		
 		__syncthreads();
@@ -133,6 +151,12 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 		Ms[threadIdx.x]=M;
 		Ss[threadIdx.x]=S;
 		js[threadIdx.x]=j;
+		
+		//-------------------------- STATS --------------------------
+		s_ss_x[threadIdx.x]  = ss_x;
+		s_ss_xx[threadIdx.x] = ss_xx;
+		//-------------------------- STATS --------------------------
+		
 		// now all threads had saved their work, reduction follows		
 		// first we must load initial values
 		for(int i=(blockDim.x>>1); i>HALF_WARP; i=i>>1){
@@ -143,9 +167,18 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 				M = M + Ms[i + threadIdx.x];
 				j=j+jv;
 				
+				//-------------------------- STATS --------------------------
+				ss_x  = ss_x + s_ss_x[threadIdx.x + i];
+				ss_xx = ss_xx + s_ss_xx[threadIdx.x + i];
+				//-------------------------- STATS --------------------------
+				
 				Ms[threadIdx.x]=M;
 				Ss[threadIdx.x]=S;
 				js[threadIdx.x]=j;
+				//-------------------------- STATS --------------------------
+				s_ss_x[threadIdx.x]  = ss_x;
+				s_ss_xx[threadIdx.x] = ss_xx;
+				//-------------------------- STATS --------------------------
 			}
 			__syncthreads();
 		}
@@ -157,21 +190,38 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 			S = S + __shfl_down(S, q) + (j/(jv*(j+jv)))*ftemp*ftemp;
 			M = M + __shfl_down(M, q);
 			j=j+jv;
+			
+			//-------------------------- STATS --------------------------
+			ss_x  = ss_x + __shfl_down(ss_x, q);
+			ss_xx = ss_xx + __shfl_down(ss_xx, q);
+			//-------------------------- STATS --------------------------
 		}
 		
 	}
 	else {
 		if(threadIdx.x==0){
+			//printf("Doing one thread thing\n");
 			pos=0;
 			M=__ldg(&d_input[3*pos]);
 			S=__ldg(&d_input[3*pos+1]);
 			j=nElements;
+			//-------------------------- STATS --------------------------
+			ss_temp = sqrt(__ldg(&d_input[3*pos+1])/((float) nElements));
+			ss_x    = ss_temp;
+			ss_xx   = (ss_temp*ss_temp);
+			//-------------------------- STATS --------------------------
 			for(pos=1; pos<size; pos++){
 				jv=__ldg(&d_input[3*pos+2]);
 				ftemp = ( jv/j*M - __ldg(&d_input[3*pos]) );
 				S = S + __ldg(&d_input[3*pos+1]) + (j/(jv*(j+jv)))*ftemp*ftemp;
 				M = M + __ldg(&d_input[3*pos]);
 				j=j+jv;
+				
+				//-------------------------- STATS --------------------------
+				ss_temp = sqrt(__ldg(&d_input[3*pos+1])/((float) nElements));
+				ss_x  += ss_temp;
+				ss_xx += (ss_temp*ss_temp);
+				//-------------------------- STATS --------------------------
 			}
 		}
 	}
@@ -186,18 +236,36 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 	signal_mean = s_signal_mean;
 	signal_sd   = s_signal_sd;
 	//---- Calculation of the initial MSD
-	//----------------------------------------------
+	//-----------------------------------------------------------
 	
 	//if(threadIdx.x==0) printf("Initial mean:%f; and standard deviation:%f;\n", signal_mean, signal_sd);
-
+	
+	
+	//-------------------------- STATS --------------------------
+	if(threadIdx.x==0){
+		//printf("size:%f; alt_size:%f; ss_x:%f; ss_xx:%f; \n", (float) size, j/nElements, ss_x, ss_xx);
+		d_stats[0]=signal_mean;
+		d_stats[1]=signal_sd;
+		d_stats[2]=ss_x/((float) (j/nElements)); //mean of sigma
+		d_stats[3]=sqrt((ss_xx - (ss_x*ss_x)/((float) (j/nElements)))/((float) (j/nElements)));  //sigma of sigma
+	}
+	//-------------------------- STATS --------------------------
+	
+	
+	
 	//----------------------------------------------
 	//---- Iterations with outlier rejection
-	for(int f=0; f<5; f++){
+	for(int f=0; f<nIterations; f++){
 		pos=threadIdx.x;
 		if(size>blockDim.x){
 			M=0;
 			S=0;
 			j=0;
+			
+			//-------------------------- STATS --------------------------
+			ss_x    = 0;
+			ss_xx   = 0;
+			//-------------------------- STATS --------------------------
 			while (pos<size){
 				Mt=__ldg(&d_input[3*pos]);
 				if( (Mt/nElements > (signal_mean - multiplier*signal_sd)) && (Mt/nElements < (signal_mean + multiplier*signal_sd)) ){
@@ -205,6 +273,11 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 						M = Mt;
 						S = __ldg(&d_input[3*pos+1]);
 						j = nElements;
+						//-------------------------- STATS --------------------------
+						ss_temp = sqrt(__ldg(&d_input[3*pos+1])/((float) nElements));
+						ss_x    = ss_temp;
+						ss_xx   = (ss_temp*ss_temp);
+						//-------------------------- STATS --------------------------
 					}
 					else{
 						jv=nElements;
@@ -212,6 +285,11 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 						S = S + __ldg(&d_input[3*pos+1]) + (j/(jv*(j+jv)))*ftemp*ftemp;
 						M = M + Mt;
 						j=j+jv;
+						//-------------------------- STATS --------------------------
+						ss_temp = sqrt(__ldg(&d_input[3*pos+1])/((float) nElements));
+						ss_x  += ss_temp;
+						ss_xx += (ss_temp*ss_temp);
+						//-------------------------- STATS --------------------------
 					}
 				}
 				pos = pos + blockDim.x;
@@ -222,6 +300,10 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 			Ms[threadIdx.x]=M;
 			Ss[threadIdx.x]=S;
 			js[threadIdx.x]=j;
+			//-------------------------- STATS --------------------------
+			s_ss_x[threadIdx.x]  = ss_x;
+			s_ss_xx[threadIdx.x] = ss_xx;
+			//-------------------------- STATS --------------------------
 			// now all threads had saved their work, reduction follows		
 			// first we must load initial values
 			for(int i=(blockDim.x>>1); i>HALF_WARP; i=i>>1){
@@ -232,18 +314,30 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 							S = Ss[i + threadIdx.x];
 							M = Ms[i + threadIdx.x];
 							j = jv;
+							//-------------------------- STATS --------------------------
+							ss_x  = s_ss_x[threadIdx.x + i];
+							ss_xx = s_ss_xx[threadIdx.x + i];
+							//-------------------------- STATS --------------------------
 						}
 						else {
 							ftemp = (jv/j*M - Ms[i + threadIdx.x]);
 							S = S + Ss[i + threadIdx.x] + (j/(jv*(j+jv)))*ftemp*ftemp;
 							M = M + Ms[i + threadIdx.x];
 							j=j+jv;
+							//-------------------------- STATS --------------------------
+							ss_x  = ss_x + s_ss_x[threadIdx.x + i];
+							ss_xx = ss_xx + s_ss_xx[threadIdx.x + i];
+							//-------------------------- STATS --------------------------
 						}
 					}
 					
 					Ms[threadIdx.x]=M;
 					Ss[threadIdx.x]=S;
 					js[threadIdx.x]=j;
+					//-------------------------- STATS --------------------------
+					s_ss_x[threadIdx.x]  = ss_x;
+					s_ss_xx[threadIdx.x] = ss_xx;
+					//-------------------------- STATS --------------------------
 				}
 				__syncthreads();
 			}
@@ -256,12 +350,20 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 						S = __shfl_down(S, q);
 						M = __shfl_down(M, q);
 						j = jv;
+						//-------------------------- STATS --------------------------
+						ss_x  = __shfl_down(ss_x, q);
+						ss_xx = __shfl_down(ss_xx, q);
+						//-------------------------- STATS --------------------------
 					}
 					else {
 						ftemp = (jv/j*M - __shfl_down(M, q));
 						S = S + __shfl_down(S, q) + (j/(jv*(j+jv)))*ftemp*ftemp;
 						M = M + __shfl_down(M, q);
-						j=j+jv;						
+						j=j+jv;	
+						//-------------------------- STATS --------------------------
+						ss_x  = ss_x + __shfl_down(ss_x, q);
+						ss_xx = ss_xx + __shfl_down(ss_xx, q);
+						//-------------------------- STATS --------------------------
 					}
 
 				}
@@ -270,6 +372,7 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 		}
 		else {
 			if(threadIdx.x==0){
+				//printf("Doing one thread thing\n");
 				M=0;
 				S=0;
 				j=0;
@@ -279,7 +382,13 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 						if(j==0){
 							M=Mt;
 							S=__ldg(&d_input[3*pos+1]);
-							j=nElements;							
+							j=nElements;
+							
+							//-------------------------- STATS --------------------------
+							ss_temp = sqrt(__ldg(&d_input[3*pos+1])/((float) nElements));
+							ss_x    = ss_temp;
+							ss_xx   = (ss_temp*ss_temp);
+							//-------------------------- STATS --------------------------
 						}
 						else{
 							jv=nElements;
@@ -287,6 +396,12 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 							S = S + __ldg(&d_input[3*pos+1]) + (j/(jv*(j+jv)))*ftemp*ftemp;
 							M = M + __ldg(&d_input[3*pos]);
 							j=j+jv;
+							
+							//-------------------------- STATS --------------------------
+							ss_temp = sqrt(__ldg(&d_input[3*pos+1])/((float) nElements));
+							ss_x  += ss_temp;
+							ss_xx += (ss_temp*ss_temp);
+							//-------------------------- STATS --------------------------
 						}
 					}
 				}
@@ -303,7 +418,16 @@ __global__ void BLN_outlier_rejection(float const* __restrict__ d_input, float *
 		signal_mean = s_signal_mean;
 		signal_sd   = s_signal_sd;
 		
+		
+		
 		//if(threadIdx.x==0) printf("Corrected mean:%f; and standard deviation:%f;\n", signal_mean, signal_sd);
+		if(threadIdx.x==0){
+			//printf("size:%f; alt_size:%f; ss_x:%f; ss_xx:%f; \n", (float) size, j/nElements, ss_x, ss_xx);
+			d_stats[4*(f+1) + 0]=signal_mean;
+			d_stats[4*(f+1) + 1]=signal_sd;
+			d_stats[4*(f+1) + 2]=ss_x/((float) (j/nElements));
+			d_stats[4*(f+1) + 3]=sqrt((ss_xx - (ss_x*ss_x)/((float) (j/nElements)))/((float) (j/nElements)));
+		}
 	}
 	//---- Iterations with outlier rejection
 	//----------------------------------------------
